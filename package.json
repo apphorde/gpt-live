@@ -1,0 +1,20 @@
+{
+  "name": "chunk-speech",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node app/server.js",
+    "test": "node --test",
+    "lint": "eslint app tests",
+    "format": "prettier --write app tests package.json"
+  },
+  "dependencies": {
+    "openid-client": "^5.6.5"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.6.2"
+  }
+}

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>Chunk Speech</title>
+  <style>
+    body {
+      font: 16px system-ui;
+      max-width: 760px;
+      margin: 3rem auto;
+      padding: 0 1rem;
+      color: #202735;
+    }
+    button {
+      padding: 0.7rem 1rem;
+      margin: 0.4rem;
+    }
+    pre {
+      white-space: pre-wrap;
+      background: #f2f4f7;
+      padding: 1rem;
+      min-height: 5rem;
+    }
+  </style>
+  <h1>Chunk Speech</h1>
+  <p>
+    Sign in with your organization, then record short audio chunks for
+    transcription.
+  </p>
+  <button id="start">Start session</button
+  ><button id="pause" disabled>Pause / finish</button>
+  <pre id="output" aria-live="polite">Not connected</pre>
+  <script type="module">
+    const output = document.querySelector("#output");
+    let media,
+      sessionId,
+      uploads = Promise.resolve(),
+      events;
+    const start = document.querySelector("#start");
+    const pause = document.querySelector("#pause");
+    start.onclick = async () => {
+      try {
+        const created = await fetch("/sessions", { method: "POST" });
+        if (created.status === 401) {
+          location.href = "/login";
+          return;
+        }
+        if (!created.ok) throw new Error("Could not create session");
+        ({ sessionId } = await created.json());
+        output.textContent = `Session ${sessionId}\n`;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+        media = new MediaRecorder(stream, { mimeType: "audio/webm" });
+        events = new EventSource(`/sessions/${sessionId}/events`);
+        events.addEventListener("transcript", (event) => {
+          const data = JSON.parse(event.data);
+          output.textContent += `${data.partial ? "… " : ""}${data.text}\n`;
+        });
+        events.addEventListener("error", () => {
+          if (events.readyState === EventSource.CLOSED)
+            output.textContent += "\nEvent stream closed";
+        });
+        media.ondataavailable = ({ data }) => {
+          if (!data.size) return;
+          const final = media.state === "inactive";
+          uploads = uploads.then(async () => {
+            const response = await fetch(`/sessions/${sessionId}/chunks`, {
+              method: "POST",
+              headers: {
+                "Content-Type": data.type,
+                "X-Audio-Duration": "5",
+                "X-Final": String(final),
+              },
+              body: data,
+            });
+            if (!response.ok)
+              output.textContent += `\nChunk upload failed (${response.status})`;
+          });
+        };
+        media.start(5000);
+        start.disabled = true;
+        pause.disabled = false;
+      } catch (error) {
+        output.textContent = error.message;
+      }
+    };
+    pause.onclick = async () => {
+      if (media?.state !== "inactive") {
+        media.stop();
+        media.stream.getTracks().forEach((track) => track.stop());
+      }
+      await new Promise((resolve) =>
+        media.addEventListener("stop", resolve, { once: true }),
+      );
+      await uploads;
+      events?.close();
+      start.disabled = false;
+      pause.disabled = true;
+    };
+  </script>
+</html>
